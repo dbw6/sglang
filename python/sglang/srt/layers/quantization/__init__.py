@@ -18,6 +18,7 @@ class DummyConfig:
 
 CompressedTensorsConfig = DummyConfig
 
+from sglang.srt.layers.quantization.aqlm_vq import AqlmVqConfig
 from sglang.srt.layers.quantization.auto_round import AutoRoundConfig
 from sglang.srt.layers.quantization.awq import AWQConfig, AWQCPUConfig, AWQMarlinConfig
 from sglang.srt.layers.quantization.base_config import QuantizationConfig
@@ -63,6 +64,7 @@ if TYPE_CHECKING:
 
 # Base quantization methods
 BASE_QUANTIZATION_METHODS: Dict[str, Type[QuantizationConfig]] = {
+    "aqlm_vq": AqlmVqConfig,
     "fp8": Fp8Config,
     "mxfp8": Fp8Config,
     "blockwise_int8": BlockInt8Config,

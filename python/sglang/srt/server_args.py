@@ -110,6 +110,7 @@ LOAD_FORMAT_CHOICES = [
 ]
 
 QUANTIZATION_CHOICES = [
+    "aqlm_vq",
     "awq",
     "fp8",
     "mxfp8",

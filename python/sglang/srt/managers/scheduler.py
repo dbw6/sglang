@@ -3995,6 +3995,37 @@ def run_scheduler_process(
     dp_rank: Optional[int],
     pipe_writer,
 ):
+    # Optional: let a debugger attach to this scheduler subprocess. SGLang spawns
+    # the scheduler as a separate process, so breakpoints set on scheduler/worker
+    # code only bind if the debugger is attached to *this* process. Gate behind an
+    # env var so it has zero effect on normal runs.
+    #
+    # By default we BLOCK at wait_for_client() so there is no race: the scheduler
+    # pauses at startup until you attach, and the debugger then stays connected for
+    # the whole process lifetime (so breakpoints during a later benchmark still
+    # fire). Set SGLANG_DEBUGPY_NO_WAIT=1 to listen without blocking.
+    if os.environ.get("SGLANG_DEBUGPY"):
+        import debugpy
+
+        debug_port = int(os.environ.get("SGLANG_DEBUGPY_PORT", "5678")) + (tp_rank or 0)
+        try:
+            debugpy.listen(("127.0.0.1", debug_port))
+            print(
+                f"[debugpy] scheduler (tp_rank={tp_rank}) listening on "
+                f"127.0.0.1:{debug_port}",
+                flush=True,
+            )
+            if not os.environ.get("SGLANG_DEBUGPY_NO_WAIT"):
+                print(
+                    f"[debugpy] scheduler (tp_rank={tp_rank}) waiting for client to "
+                    f"attach on 127.0.0.1:{debug_port} ...",
+                    flush=True,
+                )
+                debugpy.wait_for_client()
+                print(f"[debugpy] scheduler (tp_rank={tp_rank}) client attached", flush=True)
+        except Exception as e:  # noqa: BLE001 - never let debug setup kill the scheduler
+            print(f"[debugpy] scheduler (tp_rank={tp_rank}) setup failed: {e}", flush=True)
+
     # Load plugins so hooks can override Scheduler and its dependencies.
     load_plugins()
     dp_rank = configure_scheduler_process(

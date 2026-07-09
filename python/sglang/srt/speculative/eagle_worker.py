@@ -55,6 +55,7 @@ from sglang.srt.speculative.eagle_utils import (
     build_tree_kernel_efficient,
     organize_draft_results,
 )
+from sglang.srt.speculative import spec_trace
 from sglang.srt.speculative.spec_info import SpeculativeAlgorithm
 from sglang.srt.speculative.spec_utils import (
     assign_draft_cache_locs,
@@ -1006,6 +1007,11 @@ class EAGLEWorker(TpModelWorker):
                 res.accept_indices
             ]
 
+        if spec_trace.enabled() and not batch.forward_mode.is_idle():
+            spec_trace.trace_verify_step(
+                batch, spec_info, res, logits_output.next_token_logits
+            )
+
         if (
             self.target_worker.model_runner.hybrid_gdn_config is not None
             or self.target_worker.model_runner.mamba2_config is not None
@@ -1150,6 +1156,16 @@ class EAGLEWorker(TpModelWorker):
         assert isinstance(forward_batch.spec_info, EagleDraftInput)
         assert forward_batch.spec_info is batch.spec_info
         self.capture_for_decode(logits_output, forward_batch.spec_info)
+        if spec_trace.enabled():
+            # The root distribution after prefill predicts output position 1
+            # (position 0 is the token the target prefill just produced, not
+            # yet appended to req.output_ids).
+            spec_trace.trace_draft_q(
+                batch.reqs,
+                logits_output.next_token_logits,
+                out_pos_offset=1,
+                hot_token_id=self.hot_token_id,
+            )
 
     def forward_draft_extend_after_decode(
         self, batch: ScheduleBatch
@@ -1241,6 +1257,16 @@ class EAGLEWorker(TpModelWorker):
             probs = torch.softmax(logits_output.next_token_logits, dim=-1)
             topk_p, topk_index = fast_topk(probs, self.topk, dim=-1)
             hidden_states = logits_output.hidden_states
+            if spec_trace.enabled() and not input_is_idle:
+                # Root distribution for the *next* verify step; predicts output
+                # position len(req.output_ids) (this step's commits are already
+                # appended).
+                spec_trace.trace_draft_q(
+                    batch.reqs,
+                    logits_output.next_token_logits,
+                    out_pos_offset=0,
+                    hot_token_id=self.hot_token_id,
+                )
 
         maybe_detect_nan(
             logits_output.next_token_logits,
